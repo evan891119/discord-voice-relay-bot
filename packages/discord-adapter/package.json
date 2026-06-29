@@ -1,0 +1,19 @@
+{
+  "name": "@discord-voice-relay-bot/discord-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "description": "Discord client, command, voice connection, receive, and transmit contracts.",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/audioMixer.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.19.0",
+    "discord.js": "^14.26.4",
+    "opusscript": "^0.0.8"
+  }
+}

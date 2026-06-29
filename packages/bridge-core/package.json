@@ -1,0 +1,16 @@
+{
+  "name": "@discord-voice-relay-bot/bridge-core",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "description": "Shared voice bridge lifecycle and audio routing contracts.",
+  "exports": {
+    ".": "./src/index.js",
+    "./bridge-engine": "./src/bridgeEngine.js",
+    "./contracts": "./src/contracts.js"
+  },
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/contracts.js && node --check src/bridgeEngine.js"
+  }
+}

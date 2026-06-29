@@ -1,0 +1,21 @@
+{
+  "name": "discord-voice-relay-bot",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "npm run start --workspace @discord-voice-relay-bot/self-hosted-bot",
+    "check": "npm run check --workspaces --if-present"
+  },
+  "overrides": {
+    "undici": "^6.27.0"
+  }
+}

@@ -11,6 +11,6 @@
     "./contracts": "./src/contracts.js"
   },
   "scripts": {
-    "check": "node --check src/index.js && node --check src/contracts.js && node --check src/bridgeEngine.js"
+    "check": "node --check src/index.js && node --check src/contracts.js && node --check src/bridgeEngine.js && node --test test/*.test.js"
   }
 }

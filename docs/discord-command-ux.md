@@ -18,7 +18,8 @@ possible.
 - Users should stay in their existing Discord servers and voice channels.
 - A user should be able to call the bot into the voice channel they are already
   using.
-- The first command-driven version should support exactly two endpoints.
+- The default command-driven version should support exactly two endpoints.
+  Experimental group bridges must be explicitly enabled by self-hosted config.
 - The command flow should avoid requiring a web dashboard.
 - Sensitive output should be ephemeral by default.
 - Public messages should be limited to safe bridge lifecycle announcements.
@@ -34,6 +35,8 @@ Current implementation status:
 
 - `/bridge create` and `/bridge join <code>` implement the primary dynamic
   pairing flow.
+- When `ENABLE_GROUP_BRIDGES=true`, `/bridge create max_endpoints:<number>` and
+  `/bridge invite` expose experimental group bridge setup.
 - `/bridge leave`, `/bridge status`, and `/bridge help` support bridge
   management after pairing.
 - Static `.env` bridge startup is a self-hosted fallback through
@@ -55,6 +58,11 @@ Expected behavior:
 6. Bot creates a short-lived pairing code.
 7. Bot replies with the pairing code and expiry.
 
+When group bridges are enabled, `max_endpoints` can be supplied to create an
+experimental group bridge. Omitting `max_endpoints` keeps the default
+two-endpoint bridge behavior. The initial group code can be reused until the
+group reaches its configured endpoint limit or the code expires.
+
 Response visibility:
 
 - Ephemeral: pairing code, expiry, private setup errors, permission failures.
@@ -68,6 +76,8 @@ Failure states:
 - User is not allowed by local policy.
 - Another pending bridge already exists for the same channel, if the MVP chooses
   to enforce one pending bridge per channel.
+- `max_endpoints` is supplied while group bridges are disabled.
+- `max_endpoints` is outside the configured self-hosted range.
 
 ### `/bridge join <code>`
 
@@ -82,8 +92,8 @@ Expected behavior:
 4. Bot verifies that the user is in a voice channel.
 5. Bot verifies that the user and channel are allowed by `PermissionPolicy`.
 6. Bot joins the caller's current voice channel.
-7. Bot connects the two bridge endpoints.
-8. Bot starts bidirectional audio forwarding.
+7. Bot connects the bridge endpoints.
+8. Bot starts bidirectional or group audio forwarding.
 
 Response visibility:
 
@@ -93,12 +103,43 @@ Response visibility:
 Failure states:
 
 - Pairing code is invalid, expired, already used, or revoked.
+- Group code points to a bridge that is already full.
 - Caller is not in a voice channel.
 - Caller is trying to join from the same endpoint as the creator.
 - Bot lacks required voice permissions.
 - User or channel is not allowed by policy.
 - Bridge startup fails after one side joined; bot should clean up and report the
   failed state.
+- Group invite points to a full, stopped, failed, or deleted bridge.
+
+### `/bridge invite`
+
+Optionally creates another short-lived join code for an active group bridge.
+The initial group code from `/bridge create max_endpoints:<number>` can already
+be reused until the group is full or the code expires.
+
+Expected behavior:
+
+1. Caller joins a voice channel that is already part of a running group bridge.
+2. Caller runs `/bridge invite`.
+3. Bot verifies that group bridges are enabled.
+4. Bot verifies that the group is not full.
+5. Bot verifies that the caller can manage or join the group through
+   `PermissionPolicy`.
+6. Bot creates a one-time invite code.
+7. Bot replies ephemerally with the code and expiry.
+
+Response visibility:
+
+- Ephemeral by default.
+
+Failure states:
+
+- Group bridges are disabled.
+- Caller is not in a grouped voice channel.
+- Active bridge is not a group bridge.
+- Group bridge is already full.
+- Caller is not allowed by policy.
 
 ### `/bridge status`
 
@@ -123,6 +164,7 @@ Status fields:
 - Local endpoint voice channel.
 - Remote endpoint label, if safe to show.
 - Pairing expiry for pending bridges.
+- Group endpoint count, if the bridge is a group bridge.
 - Last error summary, if any.
 
 ### `/bridge leave`
@@ -134,9 +176,12 @@ Expected behavior:
 
 1. Bot identifies the relevant bridge.
 2. Bot checks `PermissionPolicy`.
-3. Bot stops audio forwarding.
-4. Bot leaves both voice channels.
-5. Bot marks the bridge stopped in `StateStore`.
+3. For a two-endpoint bridge, bot stops audio forwarding and leaves both voice
+   channels.
+4. For a group bridge with more than two endpoints, bot removes the caller's
+   endpoint and restarts the group with the remaining endpoints.
+5. If fewer than two group endpoints remain, bot stops the group.
+6. Bot marks the resulting bridge state in `StateStore`.
 
 Response visibility:
 

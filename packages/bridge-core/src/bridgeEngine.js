@@ -11,8 +11,50 @@ function assertBridgeDefinition(bridge) {
     throw new Error(`Bridge ${bridge.id} is disabled`);
   }
 
-  if (!Array.isArray(bridge.endpoints) || bridge.endpoints.length !== 2) {
+  if (!Array.isArray(bridge.endpoints)) {
+    throw new Error(`Bridge ${bridge.id} must define endpoints`);
+  }
+
+  const mode = bridge.mode ?? 'pair';
+  if (mode === 'pair' && bridge.endpoints.length !== 2) {
     throw new Error(`Bridge ${bridge.id} must have exactly two endpoints`);
+  }
+
+  if (mode === 'group') {
+    if (bridge.endpoints.length < 2) {
+      throw new Error(`Group bridge ${bridge.id} must have at least two endpoints`);
+    }
+
+    if (bridge.maxEndpoints && bridge.endpoints.length > bridge.maxEndpoints) {
+      throw new Error(`Group bridge ${bridge.id} exceeds maxEndpoints`);
+    }
+  }
+
+  if (mode !== 'pair' && mode !== 'group') {
+    throw new Error(`Bridge ${bridge.id} has unsupported mode: ${mode}`);
+  }
+
+  const endpointIds = new Set();
+  const endpointKeys = new Set();
+  const discordGuildIds = new Set();
+  for (const endpoint of bridge.endpoints) {
+    if (endpointIds.has(endpoint.id)) {
+      throw new Error(`Bridge ${bridge.id} contains duplicate endpoint id ${endpoint.id}`);
+    }
+    endpointIds.add(endpoint.id);
+
+    const key = `${endpoint.kind}:${endpoint.guildId}:${endpoint.voiceChannelId}`;
+    if (endpointKeys.has(key)) {
+      throw new Error(`Bridge ${bridge.id} contains duplicate endpoint ${key}`);
+    }
+    endpointKeys.add(key);
+
+    if (endpoint.kind === 'discord') {
+      if (discordGuildIds.has(endpoint.guildId)) {
+        throw new Error(`Bridge ${bridge.id} contains multiple Discord endpoints in guild ${endpoint.guildId}`);
+      }
+      discordGuildIds.add(endpoint.guildId);
+    }
   }
 }
 
@@ -23,6 +65,14 @@ function stateFor(bridgeId, status, reason = undefined) {
     ...(reason ? { reason } : {}),
     updatedAt: nowIso(),
   };
+}
+
+function isExpiredPairingCode(record) {
+  if (!record?.expiresAt) {
+    return false;
+  }
+
+  return Number.isFinite(Date.parse(record.expiresAt)) && Date.parse(record.expiresAt) <= Date.now();
 }
 
 function systemContext() {
@@ -69,12 +119,28 @@ export function createMemoryStateStore() {
     async savePairingCode(record) {
       pairingCodes.set(record.code, record);
     },
+    async getPairingCode(code) {
+      const record = pairingCodes.get(code);
+      if (isExpiredPairingCode(record)) {
+        pairingCodes.delete(code);
+        return undefined;
+      }
+
+      return record;
+    },
     async listPairingCodes() {
-      return [...pairingCodes.values()];
+      return [...pairingCodes.values()].filter((record) => !isExpiredPairingCode(record));
+    },
+    async deletePairingCode(code) {
+      pairingCodes.delete(code);
     },
     async consumePairingCode(code) {
       const record = pairingCodes.get(code);
       pairingCodes.delete(code);
+      if (isExpiredPairingCode(record)) {
+        return undefined;
+      }
+
       return record;
     },
   };
@@ -94,8 +160,10 @@ export function createMemoryStateStore() {
  * @param {import('./contracts.js').StateStore} [dependencies.stateStore]
  * @param {(endpoint: import('./contracts.js').BridgeEndpoint) => Promise<object>} dependencies.joinEndpoint
  * @param {(endpointA: import('./contracts.js').BridgeEndpoint, sessionA: object, endpointB: import('./contracts.js').BridgeEndpoint, sessionB: object) => object} dependencies.startTwoWayForwarding
+ * @param {(options: { bridgeId: string, endpoints: import('./contracts.js').BridgeEndpoint[], sessions: object[] }) => object} [dependencies.startGroupForwarding]
  * @param {(endpoint: import('./contracts.js').BridgeEndpoint, session: object) => object} [dependencies.startRecovery]
  * @param {(options: { bridgeId: string, endpointRecoveries: Array<{ endpoint: import('./contracts.js').BridgeEndpoint, recovery: object }>, onEndpointEmpty?: Function }) => object} [dependencies.startVoiceStateMonitor]
+ * @param {(event: { bridge: import('./contracts.js').BridgeDefinition, endpoint: import('./contracts.js').BridgeEndpoint, reason: string }) => Promise<void>} [dependencies.onEndpointEmpty]
  * @param {(endpoint: import('./contracts.js').BridgeEndpoint, session: object) => Promise<void> | void} [dependencies.disconnectEndpoint]
  * @param {{ debug?: Function, info?: Function, warn?: Function, error?: Function }} [dependencies.logger]
  * @returns {import('./contracts.js').BridgeEngine}
@@ -106,8 +174,10 @@ export function createBridgeEngine({
   stateStore = createMemoryStateStore(),
   joinEndpoint,
   startTwoWayForwarding,
+  startGroupForwarding = undefined,
   startRecovery = undefined,
   startVoiceStateMonitor = undefined,
+  onEndpointEmpty = undefined,
   disconnectEndpoint = undefined,
   logger = console,
 }) {
@@ -121,13 +191,16 @@ export function createBridgeEngine({
 
     const bridge = await configProvider.getBridge(bridgeId);
     assertBridgeDefinition(bridge);
+    if (bridge.endpoints.length > 2 && !startGroupForwarding) {
+      throw new Error(`Bridge ${bridge.id} needs group forwarding for more than two endpoints`);
+    }
     await requirePermission(permissionPolicy, 'start_bridge', context, bridge);
     await saveState(stateStore, stateFor(bridge.id, 'starting'));
-
-    const [endpointA, endpointB] = bridge.endpoints;
+    let sessions = [];
 
     logger.info?.('bridge engine starting bridge', {
       bridgeId: bridge.id,
+      bridgeMode: bridge.mode ?? 'pair',
       bridgeName: bridge.name,
       endpoints: bridge.endpoints.map((endpoint) => ({
         id: endpoint.id,
@@ -138,41 +211,68 @@ export function createBridgeEngine({
     });
 
     try {
-      const [sessionA, sessionB] = await Promise.all([
-        joinEndpoint(endpointA),
-        joinEndpoint(endpointB),
-      ]);
+      sessions = await Promise.all(bridge.endpoints.map((endpoint) => joinEndpoint(endpoint)));
+      const endpointRecoveries = bridge.endpoints.map((endpoint, index) => ({
+        endpoint,
+        recovery: startRecovery?.(endpoint, sessions[index]),
+      }));
 
-      const recoveryA = startRecovery?.(endpointA, sessionA);
-      const recoveryB = startRecovery?.(endpointB, sessionB);
       const voiceStateMonitor = startVoiceStateMonitor?.({
         bridgeId: bridge.id,
-        endpointRecoveries: [
-          { endpoint: endpointA, recovery: recoveryA },
-          { endpoint: endpointB, recovery: recoveryB },
-        ],
-        onEndpointEmpty: async () => {
+        endpointRecoveries,
+        onEndpointEmpty: async (endpoint, reason) => {
+          if (onEndpointEmpty) {
+            await onEndpointEmpty({ bridge, endpoint, reason });
+            return;
+          }
+
           await stopBridge(bridge.id);
         },
       });
-      const forwarder = startTwoWayForwarding(endpointA, sessionA, endpointB, sessionB);
+      const forwarder = startGroupForwarding
+        ? startGroupForwarding({
+          bridgeId: bridge.id,
+          endpoints: bridge.endpoints,
+          sessions,
+        })
+        : startTwoWayForwarding(bridge.endpoints[0], sessions[0], bridge.endpoints[1], sessions[1]);
 
       activeBridges.set(bridge.id, {
         bridge,
-        endpoints: [endpointA, endpointB],
+        endpoints: bridge.endpoints,
         forwarder,
-        recoveries: [recoveryA, recoveryB].filter(Boolean),
-        sessions: [sessionA, sessionB],
+        recoveries: endpointRecoveries.map(({ recovery }) => recovery).filter(Boolean),
+        sessions,
         voiceStateMonitor,
       });
 
       logger.info?.('bridge engine bridge running', {
         bridgeId: bridge.id,
+        bridgeMode: bridge.mode ?? 'pair',
         bridgeName: bridge.name,
+        endpointCount: bridge.endpoints.length,
       });
 
       return saveState(stateStore, stateFor(bridge.id, 'running'));
     } catch (error) {
+      for (const [index, session] of sessions.entries()) {
+        const endpoint = bridge.endpoints[index];
+        try {
+          if (disconnectEndpoint) {
+            await disconnectEndpoint(endpoint, session);
+          } else {
+            await session.disconnect?.();
+            session.destroy?.();
+          }
+        } catch (disconnectError) {
+          logger.warn?.('bridge engine failed to clean up endpoint after startup failure', {
+            bridgeId: bridge.id,
+            endpointId: endpoint?.id,
+            error: disconnectError.message,
+          });
+        }
+      }
+
       await saveState(stateStore, stateFor(bridge.id, 'failed', error.message));
       throw error;
     }

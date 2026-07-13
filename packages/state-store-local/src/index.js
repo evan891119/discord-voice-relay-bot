@@ -85,9 +85,25 @@ export function createLocalStateStore({
         state.pairingCodes[record.code] = record;
       });
     },
+    async getPairingCode(code) {
+      return updateState((state) => {
+        const record = state.pairingCodes[code];
+        if (isExpired(record)) {
+          delete state.pairingCodes[code];
+          return undefined;
+        }
+
+        return record;
+      });
+    },
     async listPairingCodes() {
       const state = await readState();
       return Object.values(state.pairingCodes).filter((record) => !isExpired(record));
+    },
+    async deletePairingCode(code) {
+      await updateState((state) => {
+        delete state.pairingCodes[code];
+      });
     },
     async consumePairingCode(code) {
       return updateState((state) => {

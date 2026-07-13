@@ -337,6 +337,8 @@ state stores and permission policies.
 
 The pairing lifecycle and state model are documented in
 `docs/cross-server-pairing-flow.md`.
+Future three-or-more endpoint group bridges are designed separately in
+`docs/multi-endpoint-group-bridge-design.md`.
 
 Important architecture rules:
 

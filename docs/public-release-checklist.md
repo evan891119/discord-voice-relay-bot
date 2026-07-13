@@ -44,6 +44,7 @@ Voice Bridge from the private development repository.
 - Document command usage:
   - `/bridge create`
   - `/bridge join <code>`
+  - `/bridge invite` when experimental group bridges are enabled
   - `/bridge status`
   - `/bridge leave`
 - Document limitations:
@@ -52,7 +53,7 @@ Voice Bridge from the private development repository.
   - no same-server two-channel bridge with one bot account
   - no dashboard
   - no public discovery
-  - no three-or-more endpoint group bridge yet
+  - group bridges are experimental, opt-in, and bounded by `MAX_GROUP_ENDPOINTS`
 
 ## Verification
 
@@ -62,6 +63,8 @@ Voice Bridge from the private development repository.
 - Verify `/bridge create` and `/bridge join <code>` in two test servers.
 - Verify `/bridge leave`.
 - Verify auto-leave when one bridged channel becomes empty.
+- If group bridges are enabled for the release, verify
+  `docs/group-bridge-verification.md` with three Discord servers.
 - Verify duplicate command registrations are cleaned up before release.
 
 ## Public Repository Setup

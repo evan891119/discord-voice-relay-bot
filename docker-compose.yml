@@ -6,9 +6,7 @@ services:
     container_name: discord-voice-relay-bot
     restart: unless-stopped
     init: true
-    environment:
-      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      COMMAND_GUILD_IDS: ${COMMAND_GUILD_IDS:-}
+    env_file:
+      - .env
     volumes:
       - ./.local:/app/.local

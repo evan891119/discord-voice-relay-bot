@@ -5,8 +5,10 @@
 This document defines how two Discord servers connect their current voice
 channels through Discord Voice Relay Bot.
 
-The first command-driven version should still support exactly two endpoints.
-Multi-bridge and multi-endpoint routing remain future work.
+The default command-driven version still supports exactly two endpoints.
+Experimental group bridges are opt-in and documented separately in
+`docs/multi-endpoint-group-bridge-design.md` and
+`docs/group-bridge-verification.md`.
 
 ## Pairing Goals
 
@@ -43,7 +45,7 @@ Multi-bridge and multi-endpoint routing remain future work.
 5. Discord adapter resolves the caller's current voice channel.
 6. Command handler calls `PermissionPolicy.can('join_bridge', context, bridge)`.
 7. Bot joins Server B's voice channel.
-8. Command handler finalizes the bridge with exactly two endpoints.
+8. Command handler finalizes the default bridge with exactly two endpoints.
 9. Command handler calls `BridgeEngine.startBridge(bridgeId, context)`.
 10. Bot starts bidirectional audio forwarding.
 11. Bot replies with safe success messages.

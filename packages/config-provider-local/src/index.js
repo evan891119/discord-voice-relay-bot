@@ -2,6 +2,9 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
 const DEFAULT_ENV_FILE = new URL('../../../.env', import.meta.url);
+const DEFAULT_MAX_GROUP_ENDPOINTS = 3;
+const MIN_GROUP_ENDPOINTS = 3;
+const MAX_GROUP_ENDPOINTS_LIMIT = 4;
 const SNOWFLAKE_PATTERN = /^\d{17,20}$/;
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
 const BOOLEAN_VALUES = new Map([
@@ -68,6 +71,24 @@ function booleanValue(env, name, fallback) {
     throw new Error(`${name} must be a boolean value`);
   }
   return BOOLEAN_VALUES.get(raw);
+}
+
+function integerValue(env, name, fallback, { min, max } = {}) {
+  const raw = optional(env, name, String(fallback));
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${name} must be an integer`);
+  }
+
+  const value = Number.parseInt(raw, 10);
+  if (min !== undefined && value < min) {
+    throw new Error(`${name} must be at least ${min}`);
+  }
+
+  if (max !== undefined && value > max) {
+    throw new Error(`${name} must be at most ${max}`);
+  }
+
+  return value;
 }
 
 function bridgeEndpointFromSide(side) {
@@ -238,6 +259,11 @@ export function loadLocalConfig({
     ],
   } : undefined;
   const commandGuildIds = listValue(env, 'COMMAND_GUILD_IDS');
+  const groupBridgesEnabled = booleanValue(env, 'ENABLE_GROUP_BRIDGES', false);
+  const maxGroupEndpoints = integerValue(env, 'MAX_GROUP_ENDPOINTS', DEFAULT_MAX_GROUP_ENDPOINTS, {
+    min: MIN_GROUP_ENDPOINTS,
+    max: MAX_GROUP_ENDPOINTS_LIMIT,
+  });
   const allowedGuildIds = listValue(env, 'LOCAL_ALLOWED_GUILD_IDS');
   const allowedVoiceChannelIds = listValue(env, 'LOCAL_ALLOWED_VOICE_CHANNEL_IDS');
   const permissionPolicy = createLocalPermissionPolicy({
@@ -255,7 +281,9 @@ export function loadLocalConfig({
     bridgeName,
     commandGuildIds,
     configProvider: createLocalConfigProvider(bridge),
+    groupBridgesEnabled,
     logLevel: logLevel(env, 'LOG_LEVEL', 'info'),
+    maxGroupEndpoints,
     permissionPolicy,
     selfDeaf: booleanValue(env, 'SELF_DEAF', false),
     selfMute: booleanValue(env, 'SELF_MUTE', false),

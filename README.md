@@ -21,6 +21,10 @@ See [docs/discord-command-ux.md](docs/discord-command-ux.md) for the planned
 Discord slash-command user experience.
 See [docs/cross-server-pairing-flow.md](docs/cross-server-pairing-flow.md) for
 the planned cross-server pairing lifecycle and state model.
+See [docs/multi-endpoint-group-bridge-design.md](docs/multi-endpoint-group-bridge-design.md)
+for the design direction for future three-or-more endpoint group bridges.
+See [docs/group-bridge-verification.md](docs/group-bridge-verification.md) for
+the manual verification checklist for experimental opt-in group bridges.
 See [docs/license-and-trademark.md](docs/license-and-trademark.md) for the
 project license and brand policy.
 See [docs/public-release-checklist.md](docs/public-release-checklist.md) for
@@ -81,6 +85,8 @@ Implemented:
 - Multiple unrelated bridge pairs can run at the same time.
 - Guardrails prevent the same voice channel from being reused across multiple
   pending or running bridges.
+- Experimental opt-in group bridges can run with three endpoints when
+  `ENABLE_GROUP_BRIDGES=true`.
 - Docker Compose deployment example.
 - JSON lifecycle, recovery, and audio pipeline logs.
 
@@ -95,7 +101,8 @@ Do not expect these features yet:
 - Payments.
 - Public server discovery.
 - Complex multi-room matching.
-- Three-or-more endpoint group bridges.
+- Three-or-more endpoint group bridges by default. Group bridges are
+  experimental and must be enabled explicitly.
 - Same-server voice-channel-to-voice-channel bridging with one bot account.
 
 ## License
@@ -117,7 +124,8 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
 
 ## Known Limitations
 
-- Each bridge currently supports exactly two endpoints.
+- Default dynamic pairing supports exactly two endpoints. Experimental group
+  bridges support three endpoints when explicitly enabled.
 - The two endpoints must be in different Discord servers.
 - Both channels must be normal Discord voice channels.
 - Multiple speakers can be mixed per direction, but this is still a POC mixer.
@@ -219,6 +227,10 @@ Advanced optional variables:
 - `LOCAL_ALLOWED_VOICE_CHANNEL_IDS=` optional comma-separated voice-channel
   allowlist. Leave empty to disable the voice-channel allowlist and allow
   dynamic pairing from any normal voice channel where the bot has access.
+- `ENABLE_GROUP_BRIDGES=false` opt-in flag for experimental group bridges with
+  three or more endpoints. Leave disabled for the default two-endpoint flow.
+- `MAX_GROUP_ENDPOINTS=3` maximum group bridge endpoint count when group
+  bridges are enabled. The current supported range is 3 to 4.
 
 Optional legacy static bridge variables:
 
@@ -242,6 +254,18 @@ voice channel by default. Set `LOCAL_ALLOWED_GUILD_IDS` or
 `LOCAL_ALLOWED_VOICE_CHANNEL_IDS` only when you want to enable a local allowlist.
 The optional admin allowlists restrict who can use command-driven bridge
 controls.
+
+Group bridge support is experimental and disabled by default. When
+`ENABLE_GROUP_BRIDGES=true`, `/bridge create` registers an optional
+`max_endpoints` value. Omitting that option still creates the default
+two-endpoint bridge. A group bridge still starts when a second server runs
+`/bridge join <code>`. The same group code can be reused by additional servers
+until the configured endpoint limit is reached or the code expires.
+`/bridge invite` remains available as an optional way to create another
+short-lived code for an active group bridge. In a group bridge with more than
+two endpoints,
+`/bridge leave` removes the caller's endpoint and restarts the group with the
+remaining endpoints. If fewer than two endpoints remain, the group stops.
 
 ## Local Runtime State
 

@@ -2,6 +2,7 @@ import {
   ChannelType,
   Client,
   GatewayIntentBits,
+  MessageFlags,
   PermissionsBitField,
   SlashCommandBuilder,
 } from 'discord.js';
@@ -28,8 +29,11 @@ const RECOVERABLE_DISCONNECT_REASONS = new Set([
   VoiceConnectionDisconnectReason.EndpointRemoved,
   VoiceConnectionDisconnectReason.WebSocketClose,
 ]);
-const BRIDGE_COMMANDS = [
-  new SlashCommandBuilder()
+function buildBridgeCommands({
+  groupBridgesEnabled = false,
+  maxGroupEndpoints = 3,
+} = {}) {
+  let bridgeCommand = new SlashCommandBuilder()
     .setName('bridge')
     .setDescription('Control the Discord voice relay.')
     .addSubcommand((subcommand) => subcommand
@@ -40,18 +44,41 @@ const BRIDGE_COMMANDS = [
       .setDescription('Show bridge status.'))
     .addSubcommand((subcommand) => subcommand
       .setName('help')
-      .setDescription('Show bridge command help.'))
-    .addSubcommand((subcommand) => subcommand
-      .setName('create')
-      .setDescription('Create a pending bridge from your current voice channel.'))
+      .setDescription('Show bridge command help.'));
+
+  if (groupBridgesEnabled) {
+    bridgeCommand = bridgeCommand.addSubcommand((subcommand) => subcommand
+      .setName('invite')
+      .setDescription('Create another short-lived code for an active group bridge.'));
+  }
+
+  bridgeCommand = bridgeCommand
+    .addSubcommand((subcommand) => {
+      const createCommand = subcommand
+        .setName('create')
+        .setDescription('Create a pending bridge from your current voice channel.');
+
+      if (groupBridgesEnabled) {
+        return createCommand.addIntegerOption((option) => option
+        .setName('max_endpoints')
+        .setDescription('Create an opt-in group bridge with this endpoint limit.')
+        .setMinValue(3)
+        .setMaxValue(maxGroupEndpoints)
+        .setRequired(false));
+      }
+
+      return createCommand;
+    })
     .addSubcommand((subcommand) => subcommand
       .setName('join')
       .setDescription('Join a pending bridge with a pairing code.')
       .addStringOption((option) => option
         .setName('code')
         .setDescription('Pairing code from the other server.')
-        .setRequired(true))),
-].map((command) => command.toJSON());
+        .setRequired(true)));
+
+  return [bridgeCommand].map((command) => command.toJSON());
+}
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -83,6 +110,29 @@ export function createDiscordVoiceAdapter({
       GatewayIntentBits.GuildVoiceStates,
     ],
   });
+
+  client.on('error', (error) => {
+    logger.error('discord client error', {
+      code: error?.code,
+      error: error?.message,
+    });
+  });
+
+  function normalizeInteractionResponseOptions(options) {
+    if (!options || typeof options !== 'object') {
+      return options;
+    }
+
+    if (!options.ephemeral) {
+      return options;
+    }
+
+    const { ephemeral: _ephemeral, flags, ...rest } = options;
+    return {
+      ...rest,
+      flags: flags === undefined ? MessageFlags.Ephemeral : flags,
+    };
+  }
 
   async function resolveVoiceChannel(endpoint) {
     const guild = await client.guilds.fetch(endpoint.guildId);
@@ -118,22 +168,35 @@ export function createDiscordVoiceAdapter({
     });
   }
 
-  async function registerBridgeCommands({ guildIds = [] } = {}) {
+  async function registerBridgeCommands({
+    guildIds = [],
+    groupBridgesEnabled = false,
+    maxGroupEndpoints = 3,
+  } = {}) {
+    const bridgeCommands = buildBridgeCommands({
+      groupBridgesEnabled,
+      maxGroupEndpoints,
+    });
+
     if (guildIds.length === 0) {
-      await client.application.commands.set(BRIDGE_COMMANDS);
+      await client.application.commands.set(bridgeCommands);
       logger.info('registered global bridge slash commands', {
-        commandCount: BRIDGE_COMMANDS.length,
+        commandCount: bridgeCommands.length,
+        groupBridgesEnabled,
+        maxGroupEndpoints,
       });
       return;
     }
 
     for (const guildId of guildIds) {
       const guild = await client.guilds.fetch(guildId);
-      await guild.commands.set(BRIDGE_COMMANDS);
+      await guild.commands.set(bridgeCommands);
       logger.info('registered guild bridge slash commands', {
         guildId,
         guildName: guild.name,
-        commandCount: BRIDGE_COMMANDS.length,
+        commandCount: bridgeCommands.length,
+        groupBridgesEnabled,
+        maxGroupEndpoints,
       });
     }
   }
@@ -215,7 +278,7 @@ export function createDiscordVoiceAdapter({
 
   function commandContextFromInteraction(interaction, endpoint = undefined) {
     return {
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
       subject: {
         userId: interaction.user.id,
         guildId: interaction.guildId ?? endpoint?.guildId ?? 'unknown',
@@ -228,34 +291,90 @@ export function createDiscordVoiceAdapter({
   }
 
   function onBridgeCommand(handler) {
-    async function onInteractionCreate(interaction) {
+    async function safeInteractionReply(interaction, options) {
+      const response = normalizeInteractionResponseOptions(options);
+
+      try {
+        if (interaction.deferred) {
+          return await interaction.editReply(response);
+        }
+
+        if (interaction.replied) {
+          return await interaction.followUp(response);
+        }
+
+        return await interaction.reply(response);
+      } catch (error) {
+        logger.error('failed to send interaction response', {
+          code: error?.code,
+          command: interaction.commandName,
+          error: error?.message,
+          guildId: interaction.guildId,
+          subcommand: interaction.options?.getSubcommand?.(false),
+          userId: interaction.user?.id,
+        });
+        return undefined;
+      }
+    }
+
+    function createSafeInteraction(interaction) {
+      return new Proxy(interaction, {
+        get(target, property, receiver) {
+          if (property === 'reply') {
+            return (options) => safeInteractionReply(target, options);
+          }
+
+          if (property === 'followUp') {
+            return (options) => safeInteractionReply(target, options);
+          }
+
+          if (property === 'editReply') {
+            return (options) => safeInteractionReply(target, options);
+          }
+
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    }
+
+    async function handleInteraction(interaction) {
       if (!interaction.isChatInputCommand() || interaction.commandName !== 'bridge') {
         return;
       }
 
+      const safeInteraction = createSafeInteraction(interaction);
+
       try {
-        await handler(interaction);
+        await handler(safeInteraction);
       } catch (error) {
         logger.error('bridge command failed', {
           command: interaction.commandName,
-          error: error.message,
+          code: error?.code,
+          error: error?.message,
           guildId: interaction.guildId,
-          subcommand: interaction.options.getSubcommand(false),
-          userId: interaction.user.id,
+          subcommand: interaction.options?.getSubcommand?.(false),
+          userId: interaction.user?.id,
         });
 
-        const response = {
+        await safeInteractionReply(interaction, {
           content: 'Bridge command failed. Check the bot logs.',
-          ephemeral: true,
-        };
-
-        if (interaction.deferred || interaction.replied) {
-          await interaction.followUp(response);
-          return;
-        }
-
-        await interaction.reply(response);
+          flags: MessageFlags.Ephemeral,
+        });
       }
+    }
+
+    function onInteractionCreate(interaction) {
+      handleInteraction(interaction).catch((error) => {
+        logger.error('unhandled interaction handler error', {
+          code: error?.code,
+          command: interaction.commandName,
+          error: error?.message,
+          guildId: interaction.guildId,
+          subcommand: interaction.options?.getSubcommand?.(false),
+          userId: interaction.user?.id,
+        });
+      });
     }
 
     client.on('interactionCreate', onInteractionCreate);
@@ -383,33 +502,190 @@ export function createDiscordVoiceAdapter({
     };
   }
 
-  function startTwoWayForwarding(endpointA, connectionA, endpointB, connectionB) {
-    const nameA = endpointName(endpointA);
-    const nameB = endpointName(endpointB);
-    const forwarders = [
-      startDirectionalForwarding(endpointA, connectionA, endpointB, connectionB),
-      startDirectionalForwarding(endpointB, connectionB, endpointA, connectionA),
-    ];
+  function startEndpointFanoutForwarding(targetEndpoint, targetConnection, sourceEntries) {
+    const targetName = endpointName(targetEndpoint);
+    const direction = `group->${targetName}`;
+    const player = createAudioPlayer({
+      behaviors: {
+        noSubscriber: NoSubscriberBehavior.Play,
+      },
+    });
+    let mixSession;
+    const subscription = targetConnection.subscribe(player);
 
-    logger.info('two-way audio forwarding started', {
-      directions: [`${nameA}->${nameB}`, `${nameB}->${nameA}`],
-      echoProtection: 'bot user id is ignored as a source in both directions',
+    if (!subscription) {
+      throw new Error(`Unable to subscribe endpoint ${targetName} voice connection to audio player`);
+    }
+
+    player.on('stateChange', (oldState, newState) => {
+      logger.debug('group audio player state changed', {
+        direction,
+        oldStatus: oldState.status,
+        newStatus: newState.status,
+        resource: newState.resource?.metadata,
+      });
+
+      if (newState.status === 'idle') {
+        mixSession = undefined;
+      }
+    });
+
+    player.on('error', (error) => {
+      logger.error('group audio player error', {
+        direction,
+        error: error.message,
+        resource: error.resource?.metadata,
+      });
+    });
+
+    const listeners = sourceEntries.map(({ endpoint: sourceEndpoint, session: sourceConnection }) => {
+      const sourceName = endpointName(sourceEndpoint);
+      const sourceEndpointId = sourceEndpoint.id;
+
+      function onSpeakingStart(userId) {
+        if (userId === client.user?.id) {
+          logger.debug('ignoring bot audio source', {
+            direction,
+            sourceEndpointId,
+            targetEndpointId: targetEndpoint.id,
+            userId,
+          });
+          return;
+        }
+
+        const sourceKey = `${sourceEndpointId}:${userId}`;
+        if (mixSession?.hasSource(sourceKey)) {
+          return;
+        }
+
+        if (!mixSession) {
+          mixSession = createMixSession({
+            direction,
+            logger,
+          });
+
+          const resource = createAudioResource(mixSession.opusStream, {
+            inputType: StreamType.Opus,
+            metadata: {
+              direction,
+              kind: 'group-mixed-audio',
+              targetEndpointId: targetEndpoint.id,
+            },
+          });
+
+          logger.info('starting group mixed audio resource', {
+            direction,
+            mixer: MIXER_LIMITS,
+            targetEndpointId: targetEndpoint.id,
+          });
+          player.play(resource);
+        }
+
+        logger.info('forwarding group speaker audio', {
+          direction,
+          sourceEndpointId,
+          sourceName,
+          targetEndpointId: targetEndpoint.id,
+          userId,
+        });
+
+        const audioStream = sourceConnection.receiver.subscribe(userId, {
+          end: {
+            behavior: EndBehaviorType.AfterInactivity,
+            duration: MIXER_LIMITS.sourceInactivityMs,
+          },
+        });
+
+        mixSession.addSource(sourceKey, audioStream);
+        logger.info('group speaker connected to mixer', {
+          direction,
+          sourceCount: mixSession.sourceCount(),
+          sourceEndpointId,
+          targetEndpointId: targetEndpoint.id,
+          userId,
+        });
+      }
+
+      sourceConnection.receiver.speaking.on('start', onSpeakingStart);
+      return { onSpeakingStart, sourceConnection, sourceEndpoint };
+    });
+
+    logger.info('endpoint fanout audio forwarding started', {
+      direction,
+      sourceEndpointCount: sourceEntries.length,
+      targetEndpointId: targetEndpoint.id,
+    });
+
+    return {
+      destroy() {
+        logger.info('endpoint fanout audio forwarding stopping', {
+          direction,
+          activeSourceCount: mixSession?.sourceCount() ?? 0,
+          targetEndpointId: targetEndpoint.id,
+        });
+
+        for (const { onSpeakingStart, sourceConnection } of listeners) {
+          sourceConnection.receiver.speaking.off('start', onSpeakingStart);
+        }
+
+        mixSession?.destroy();
+        mixSession = undefined;
+        player.stop(true);
+        subscription.unsubscribe();
+        logger.info('endpoint fanout audio forwarding stopped', {
+          direction,
+          targetEndpointId: targetEndpoint.id,
+        });
+      },
+    };
+  }
+
+  function startGroupForwarding({ bridgeId, endpoints, sessions }) {
+    const endpointEntries = endpoints.map((endpoint, index) => ({
+      endpoint,
+      session: sessions[index],
+    }));
+    const forwarders = endpointEntries.map(({ endpoint: targetEndpoint, session: targetSession }) => {
+      const sourceEntries = endpointEntries.filter(({ endpoint }) => endpoint.id !== targetEndpoint.id);
+      return startEndpointFanoutForwarding(targetEndpoint, targetSession, sourceEntries);
+    });
+    const directions = endpointEntries.flatMap(({ endpoint: sourceEndpoint }) => endpointEntries
+      .filter(({ endpoint: targetEndpoint }) => targetEndpoint.id !== sourceEndpoint.id)
+      .map(({ endpoint: targetEndpoint }) => `${endpointName(sourceEndpoint)}->${endpointName(targetEndpoint)}`));
+
+    logger.info('group audio forwarding started', {
+      bridgeId,
+      directions,
+      endpointCount: endpoints.length,
+      echoProtection: 'target endpoint audio is excluded from its own outbound mix and bot user id is ignored',
       mixer: MIXER_LIMITS,
     });
 
     return {
       destroy() {
-        logger.info('two-way audio forwarding stopping', {
-          directions: [`${nameA}->${nameB}`, `${nameB}->${nameA}`],
+        logger.info('group audio forwarding stopping', {
+          bridgeId,
+          directions,
+          endpointCount: endpoints.length,
         });
         for (const forwarder of forwarders) {
           forwarder.destroy();
         }
-        logger.info('two-way audio forwarding stopped', {
-          directions: [`${nameA}->${nameB}`, `${nameB}->${nameA}`],
+        logger.info('group audio forwarding stopped', {
+          bridgeId,
+          directions,
+          endpointCount: endpoints.length,
         });
       },
     };
+  }
+
+  function startTwoWayForwarding(endpointA, connectionA, endpointB, connectionB) {
+    return startGroupForwarding({
+      bridgeId: `two-way:${endpointA.id}:${endpointB.id}`,
+      endpoints: [endpointA, endpointB],
+      sessions: [connectionA, connectionB],
+    });
   }
 
   function startConnectionRecovery(endpoint, connection) {
@@ -657,6 +933,7 @@ export function createDiscordVoiceAdapter({
     registerBridgeCommands,
     resolveCallerVoiceEndpoint,
     startConnectionRecovery,
+    startGroupForwarding,
     startTwoWayForwarding,
     startVoiceStateMonitor,
   };

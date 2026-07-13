@@ -9,7 +9,7 @@
     ".": "./src/index.js"
   },
   "scripts": {
-    "check": "node --check src/index.js"
+    "check": "node --check src/index.js && node --test test/*.test.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3"

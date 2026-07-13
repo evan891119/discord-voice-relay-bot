@@ -15,14 +15,15 @@
  */
 
 /**
- * A two-endpoint bridge definition. The MVP intentionally supports exactly two
- * endpoints. Multi-bridge and multi-endpoint routing should be added later
- * without changing the core/provider boundary.
+ * A bridge definition. Pair mode supports exactly two endpoints. Group mode is
+ * an explicit future-facing topology for three-or-more endpoint bridges.
  *
  * @typedef {object} BridgeDefinition
  * @property {string} id Stable bridge id.
  * @property {string} name Human-readable bridge name.
- * @property {[BridgeEndpoint, BridgeEndpoint]} endpoints Exactly two endpoints.
+ * @property {'pair' | 'group'} [mode] Bridge topology. Defaults to `pair`.
+ * @property {BridgeEndpoint[]} endpoints Voice endpoints in the bridge.
+ * @property {number} [maxEndpoints] Maximum endpoint count for group bridges.
  * @property {boolean} enabled Whether the bridge should be allowed to run.
  */
 
@@ -102,7 +103,9 @@
  * @property {(bridgeId: string) => Promise<BridgeRuntimeState | undefined>} getBridgeState
  * @property {(state: BridgeRuntimeState) => Promise<void>} saveBridgeState
  * @property {(record: PairingCodeRecord) => Promise<void>} savePairingCode
+ * @property {(code: string) => Promise<PairingCodeRecord | undefined>} [getPairingCode]
  * @property {() => Promise<PairingCodeRecord[]>} [listPairingCodes]
+ * @property {(code: string) => Promise<void>} [deletePairingCode]
  * @property {(code: string) => Promise<PairingCodeRecord | undefined>} consumePairingCode
  */
 

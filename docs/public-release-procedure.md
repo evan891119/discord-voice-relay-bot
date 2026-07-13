@@ -110,13 +110,20 @@ channels in two different Discord servers. Users stay in their own servers and
 voice channels, then use `/bridge create` and `/bridge join <code>` to pair a
 bridge.
 
+Multiple unrelated two-endpoint bridges can run at the same time. Experimental
+group bridges can also connect three or more Discord servers when the
+self-hosted operator enables `ENABLE_GROUP_BRIDGES=true`. The original group
+pairing code can be reused until the configured endpoint limit is reached or
+the code expires.
+
 Current limitations:
 
-- Two endpoints per bridge.
+- Two endpoints per bridge by default.
+- Group bridges are experimental, disabled by default, and bounded by
+  `MAX_GROUP_ENDPOINTS` (currently 3 to 4 endpoints).
 - Endpoints must be in different Discord servers.
 - No dashboard.
 - No public discovery.
-- No three-or-more endpoint group bridge yet.
 ```
 
 ## Post-Release Checks

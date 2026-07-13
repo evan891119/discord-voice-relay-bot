@@ -26,7 +26,7 @@ Voice Bridge from the private development repository.
 
 ## Licensing
 
-- Confirm the open-source license is still `AGPL-3.0-or-later`.
+- Confirm the open-source license is still `MIT`.
 - Keep the `LICENSE` file in the public release.
 - Keep the README license section aligned with
   `docs/license-and-trademark.md`.

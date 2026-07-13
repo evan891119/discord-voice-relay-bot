@@ -22,7 +22,8 @@ Discord slash-command user experience.
 See [docs/cross-server-pairing-flow.md](docs/cross-server-pairing-flow.md) for
 the planned cross-server pairing lifecycle and state model.
 See [docs/multi-endpoint-group-bridge-design.md](docs/multi-endpoint-group-bridge-design.md)
-for the design direction for future three-or-more endpoint group bridges.
+for the design and implementation boundaries of three-or-more endpoint group
+bridges.
 See [docs/group-bridge-verification.md](docs/group-bridge-verification.md) for
 the manual verification checklist for experimental opt-in group bridges.
 See [docs/license-and-trademark.md](docs/license-and-trademark.md) for the
@@ -85,7 +86,7 @@ Implemented:
 - Multiple unrelated bridge pairs can run at the same time.
 - Guardrails prevent the same voice channel from being reused across multiple
   pending or running bridges.
-- Experimental opt-in group bridges can run with three endpoints when
+- Experimental opt-in group bridges can run with 3 to 4 endpoints when
   `ENABLE_GROUP_BRIDGES=true`.
 - Docker Compose deployment example.
 - JSON lifecycle, recovery, and audio pipeline logs.
@@ -107,9 +108,8 @@ Do not expect these features yet:
 
 ## License
 
-Discord Voice Relay Bot is licensed under the GNU Affero General Public License
-version 3 or later (`AGPL-3.0-or-later`). See [LICENSE](LICENSE) for the full
-license text.
+Discord Voice Relay Bot is licensed under the MIT License. See
+[LICENSE](LICENSE) for the full license text.
 
 The code license does not grant rights to the project name, logo, domains,
 service names, visual identity, or trademarks. See
@@ -405,7 +405,9 @@ Dynamic pairing test:
 8. Start a new dynamic pairing, then have all non-bot users leave either voice
    channel and confirm the bot leaves both sides automatically.
 
-Pairing codes expire after 10 minutes and are consumed after one join attempt.
+Pairing codes expire after 10 minutes. Default two-endpoint bridge codes are
+consumed after one successful join. Experimental group bridge codes can be
+reused until the configured endpoint limit is reached or the code expires.
 The first dynamic implementation requires the second endpoint to be in a
 different Discord server. Multiple unrelated bridge pairs can run at the same
 time, but one voice channel can only be part of one pending or running bridge.

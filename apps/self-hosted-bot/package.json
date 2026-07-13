@@ -2,7 +2,7 @@
   "name": "@discord-voice-relay-bot/self-hosted-bot",
   "version": "0.1.0",
   "private": true,
-  "license": "AGPL-3.0-or-later",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"

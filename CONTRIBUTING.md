@@ -40,10 +40,10 @@ npm run check
 
 By submitting a contribution, you certify that you have the right to submit it
 and that your contribution may be distributed under this project's license:
-`AGPL-3.0-or-later`.
+`MIT`.
 
 ## Brand Usage
 
-The project code is licensed under AGPL-3.0-or-later, but the project name,
-logo, domains, service names, visual identity, and trademarks are not granted by
-the code license. See `docs/license-and-trademark.md`.
+The project code is licensed under the MIT License. The project name, logo,
+domains, service names, visual identity, and trademarks remain subject to the
+separate policy in `docs/license-and-trademark.md`.

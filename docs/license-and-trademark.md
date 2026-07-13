@@ -1,34 +1,32 @@
 # License And Trademark Policy
 
-This document records the initial open-source licensing decision for Voice
+This document records the current open-source licensing decision for Voice
 Relay for Discord. It is project planning, not legal advice.
 
 ## Code License
 
-Discord Voice Relay Bot is licensed under the GNU Affero General Public License
-version 3 or later (`AGPL-3.0-or-later`).
+Discord Voice Relay Bot is licensed under the MIT License (`MIT`).
 
-The AGPL was chosen because this project is network service software. The
-license allows users to run, study, modify, and redistribute the code, while
-requiring source availability for modified versions that are offered to users
-over a network.
+The MIT License permits use, copying, modification, merging, publication,
+distribution, sublicensing, and sale of the software, provided the copyright
+and license notice are preserved. Modified or hosted versions are not required
+to publish their source code.
 
 The full license text is in [../LICENSE](../LICENSE).
 
-## Why Not MIT Or Apache-2.0
+## Why MIT
 
-MIT and Apache-2.0 are simpler permissive licenses and are often easier for
-commercial reuse. They are not the first choice here because they allow someone
-to run a modified hosted version without sharing those modifications.
+MIT is a short, widely used permissive license that keeps adoption,
+self-hosting, modification, and commercial reuse straightforward.
 
-Apache-2.0 has an explicit patent grant, which is useful for some projects, but
-this project currently prioritizes keeping network-service improvements open.
+The project previously used `AGPL-3.0-or-later`. Existing copies distributed
+under that license remain available under those terms; current releases are
+distributed under MIT.
 
-## Why Not GPLv3 Only
+## Why Not Apache-2.0
 
-GPLv3 protects redistributed software, but it does not add the AGPL network-use
-source availability requirement. Because this project is meant to run as a bot
-service, AGPLv3 better matches the expected deployment model.
+Apache-2.0 is also permissive and includes an explicit patent grant. MIT was
+chosen here for its shorter terms and broad familiarity.
 
 ## Brand And Trademark
 
@@ -63,7 +61,7 @@ No separate contributor license agreement is required at this stage.
 Before the first public release:
 
 - Keep the `LICENSE` file in the public repository.
-- Keep `package.json` license fields set to `AGPL-3.0-or-later`.
+- Keep `package.json` license fields set to `MIT`.
 - Keep README license wording aligned with this document.
 - Re-check whether a separate trademark policy is needed if the project has a
   logo, domain, hosted service, or public brand presence.

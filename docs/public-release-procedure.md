@@ -131,7 +131,7 @@ Current limitations:
 After the public repository is live:
 
 - Confirm the README renders correctly.
-- Confirm the license is detected as AGPL-3.0-or-later.
+- Confirm the license is detected as MIT.
 - Confirm `.env.example` is safe.
 - Confirm public clone plus `npm install` works.
 - Confirm Docker Compose docs are still accurate.

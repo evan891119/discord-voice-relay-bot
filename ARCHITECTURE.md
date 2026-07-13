@@ -363,10 +363,9 @@ These are intentionally out of scope for the next architecture refactor:
 
 ## Licensing And Brand
 
-The open-source code is licensed under AGPLv3-or-later. This matches the
-network-service nature of the project: users can run, study, modify, and
-redistribute the code, while modified network-service versions should keep their
-corresponding source available under the license terms.
+The open-source code is licensed under the MIT License. Users may use, copy,
+modify, merge, publish, distribute, sublicense, and sell copies of the code,
+subject to preserving the copyright and license notice.
 
 The code license should not grant rights to the project brand, logo, service
 name, domain, or trademarks. Brand and trademark rights should be reserved
